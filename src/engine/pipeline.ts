@@ -1,5 +1,6 @@
 import type { AiState } from '../shared/messages';
 import type { LookSettings } from '../shared/settings';
+import { AiProcessor } from './ai';
 import { FrameRenderer } from './renderer';
 
 export interface PipelineOptions {
@@ -31,8 +32,10 @@ export class VideoPipeline {
   private readonly video: HTMLVideoElement;
   private readonly canvas: HTMLCanvasElement;
   private renderer: FrameRenderer | null = null;
+  private aiProcessor: AiProcessor | null = null;
   private output: MediaStream | null = null;
   private settings: LookSettings;
+  private readonly assetBase: string;
   private readonly captureFps: number;
   private readonly onChange?: () => void;
   private readonly onDispose?: () => void;
@@ -44,13 +47,13 @@ export class VideoPipeline {
   private frameCount = 0;
   private fpsWindowStart = 0;
   private measuredFps = 0;
-  private aiState: AiState = 'off';
   private errorMessage: string | undefined;
 
   constructor(options: PipelineOptions) {
     this.rawStream = options.stream;
     this.rawVideoTrack = options.stream.getVideoTracks()[0] ?? null;
     this.settings = options.settings;
+    this.assetBase = options.assetBase;
     this.captureFps = Math.min(60, Math.max(5, options.fps ?? options.settings.targetFps));
     this.onChange = options.onChange;
     this.onDispose = options.onDispose;
@@ -88,7 +91,7 @@ export class VideoPipeline {
   }
 
   get ai(): AiState {
-    return this.aiState;
+    return this.aiProcessor?.status ?? 'off';
   }
 
   get deviceLabel(): string {
@@ -123,6 +126,9 @@ export class VideoPipeline {
     this.renderer = new FrameRenderer(this.canvas);
     this.renderer.resize(width, height);
 
+    this.aiProcessor = new AiProcessor(this.assetBase, () => this.onChange?.());
+    void this.aiProcessor.ensure(this.settings);
+
     const captured = this.canvas.captureStream(this.captureFps);
     const track = captured.getVideoTracks()[0];
     if (!track) throw new Error('canvas.captureStream() produced no video track');
@@ -146,6 +152,7 @@ export class VideoPipeline {
 
   updateSettings(settings: LookSettings): void {
     this.settings = settings;
+    void this.aiProcessor?.ensure(settings);
     this.onChange?.();
   }
 
@@ -182,6 +189,8 @@ export class VideoPipeline {
 
     this.renderer?.dispose();
     this.renderer = null;
+    this.aiProcessor?.dispose();
+    this.aiProcessor = null;
 
     if (stopRaw) {
       try {
@@ -255,7 +264,11 @@ export class VideoPipeline {
 
   private renderFrame(): void {
     if (!this.running || !this.renderer) return;
+    const now = performance.now();
     try {
+      const aiFrame = this.aiProcessor?.tick(this.video, this.settings, now);
+      if (aiFrame?.person) this.renderer.setPersonMask(aiFrame.person);
+      if (aiFrame?.face) this.renderer.setFaceMask(aiFrame.face);
       this.renderer.render(this.video, this.settings);
     } catch (error) {
       this.fail(error);
@@ -263,7 +276,6 @@ export class VideoPipeline {
     }
 
     this.frameCount += 1;
-    const now = performance.now();
     const elapsed = now - this.fpsWindowStart;
     if (elapsed >= 1000) {
       this.measuredFps = (this.frameCount * 1000) / elapsed;

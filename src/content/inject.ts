@@ -26,6 +26,7 @@ declare global {
       version: string;
       assetBase: string;
       hasPipeline: boolean;
+      status: EngineStatus;
     };
   }
 }
@@ -61,15 +62,17 @@ function buildStatus(): EngineStatus {
 }
 
 function publishStatus(): void {
+  const status = buildStatus();
   if (window.__LOOKGOOD__) {
     window.__LOOKGOOD__.hasPipeline = pipelines.size > 0;
+    window.__LOOKGOOD__.status = status;
   }
   window.postMessage(
     {
       channel: CHANNEL,
       dir: 'to-bridge',
       type: 'status',
-      payload: buildStatus(),
+      payload: status,
     },
     '*',
   );
@@ -91,7 +94,12 @@ window.addEventListener('message', (event: MessageEvent) => {
   publishStatus();
 });
 
-window.__LOOKGOOD__ = { version: VERSION, assetBase, hasPipeline: false };
+window.__LOOKGOOD__ = {
+  version: VERSION,
+  assetBase,
+  hasPipeline: false,
+  status: { ...IDLE_STATUS },
+};
 
 const mediaDevices = navigator.mediaDevices;
 const nativeGetUserMedia = mediaDevices?.getUserMedia?.bind(mediaDevices);

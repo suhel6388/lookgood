@@ -11,14 +11,14 @@ every effect is unlocked.
 
 ## Status
 
-Phase 1 is complete; phases 2–4 are being built in this repository.
+Phase 1–3 are complete; phase 4 (popup preview and polish) is being built in this repository.
 
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1 | MV3 + Vite + React popup, MAIN-world `getUserMedia` hook, pass-through | done |
 | 2 | Canvas pipeline, constraints/track lifecycle, audio passthrough | done |
 | 2.5 | Shader effects: color, light, sharpen | done |
-| 3 | MediaPipe segmentation, portrait light, skin smoothing, background blur | in progress |
+| 3 | MediaPipe segmentation, portrait light, skin smoothing, background blur | done |
 | 4 | React popup, live preview, presets, live settings sync | in progress |
 | 5 | Auth / licensing / payments | intentionally omitted (free) |
 | 6 | OffscreenCanvas + worker, store submission polish | not started |
@@ -117,8 +117,9 @@ src/background/             stateless service worker (defaults + badge)
 src/content/bridge.ts       isolated world: storage <-> page, status -> badge
 src/content/inject.ts       MAIN world: getUserMedia override
 src/engine/pipeline.ts      hidden video -> WebGL canvas -> captureStream
-src/engine/renderer.ts      WebGL2 frame upload and effect passes
-src/engine/shaders.ts       GLSL for the effect pass
+src/engine/ai.ts            MediaPipe segmenter/landmarker, throttled masks
+src/engine/renderer.ts      WebGL2 frame upload, blur chains and effect pass
+src/engine/shaders.ts       GLSL for the blur, downscale and effect passes
 src/engine/params.ts        slider values -> shader uniforms
 src/popup/                  React + Tailwind UI, Zustand store
 src/shared/                 settings, message protocol, storage helpers
@@ -154,6 +155,10 @@ access for video.
   stops the raw camera and releases the renderer.
 - The background service worker is stateless by design, so the popup polls the
   content script for live status instead of caching it.
+- AI effects load their model the first time a slider that needs it goes above
+  zero, so there is a short warm-up. Inference then runs on the page's main
+  thread at `aiFps` (15 by default); moving it into a worker is planned for
+  phase 6.
 
 ## License
 

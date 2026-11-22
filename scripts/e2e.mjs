@@ -206,6 +206,8 @@ async function main() {
     const pageErrors = [];
     const collectError = (text) => {
       if (/favicon|404 \(Not Found\)/.test(text)) return;
+      // MediaPipe writes its startup diagnostics to console.error as INFO lines.
+      if (/^INFO: /.test(text)) return;
       pageErrors.push(text);
     };
     page.on('pageerror', (error) => collectError(String(error)));
@@ -338,6 +340,46 @@ async function main() {
         Math.abs(restored.gray.luma - baseline.gray.luma) < 0.04 &&
           Math.abs(restored.texture.contrast - baseline.texture.contrast) < 0.03,
         `luma ${restored.gray.luma.toFixed(3)} contrast ${restored.texture.contrast.toFixed(3)}`,
+      );
+
+      await applySettings(worker, { backgroundBlur: 100 }, testPage);
+      await testPage.waitForFunction(
+        () => window.__LOOKGOOD__?.status?.ai === 'ready',
+        undefined,
+        { timeout: 30000 },
+      );
+      await testPage.waitForTimeout(900);
+      const aiStatus = await testPage.evaluate(
+        () => window.__LOOKGOOD__?.status ?? null,
+      );
+      check(
+        'MediaPipe models load and report ready',
+        aiStatus?.ai === 'ready',
+        JSON.stringify(aiStatus),
+      );
+      const blurred = await sampleFrame(testPage);
+      check(
+        'background blur softens the room',
+        blurred.texture.contrast < baseline.texture.contrast - 0.015,
+        `${baseline.texture.contrast.toFixed(3)} -> ${blurred.texture.contrast.toFixed(3)}`,
+      );
+
+      await applySettings(worker, { portraitLighting: 100 }, testPage);
+      await testPage.waitForTimeout(700);
+      const portrait = await sampleFrame(testPage);
+      check(
+        'portrait lighting changes the exposure',
+        Math.abs(portrait.gray.luma - baseline.gray.luma) > 0.03,
+        `${baseline.gray.luma.toFixed(3)} -> ${portrait.gray.luma.toFixed(3)}`,
+      );
+
+      await applySettings(worker, {}, testPage);
+      await testPage.waitForTimeout(500);
+      const afterAi = await sampleFrame(testPage);
+      check(
+        'AI effects can be switched off again',
+        Math.abs(afterAi.texture.contrast - baseline.texture.contrast) < 0.03,
+        `${baseline.texture.contrast.toFixed(3)} -> ${afterAi.texture.contrast.toFixed(3)}`,
       );
     }
 
