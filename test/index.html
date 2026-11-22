@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LookGood Live — camera test bench</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #08090c;
+        --panel: #101218;
+        --line: rgba(255, 255, 255, 0.08);
+        --text: #e8e8ea;
+        --muted: #8b8d95;
+        --accent: #ffb27a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(900px 500px at 15% -10%, rgba(255, 143, 92, 0.1), transparent 60%),
+          var(--bg);
+        color: var(--text);
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+      }
+      main { max-width: 1040px; margin: 0 auto; padding: 40px 24px 64px; }
+      header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+      .mark {
+        width: 34px; height: 34px; border-radius: 10px;
+        background: linear-gradient(140deg, #2a1b12, #14161c);
+        border: 1px solid var(--line);
+        display: grid; place-items: center;
+      }
+      h1 { font-size: 18px; margin: 0; letter-spacing: -0.02em; }
+      .sub { color: var(--muted); margin: 0 0 28px; font-size: 13px; }
+      .grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); gap: 20px; }
+      @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 16px;
+      }
+      .video-wrap {
+        position: relative; border-radius: 12px; overflow: hidden;
+        background: #05060a; aspect-ratio: 16 / 9;
+        display: grid; place-items: center;
+      }
+      video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+      .empty { color: var(--muted); font-size: 13px; }
+      .controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+      button, select {
+        font: inherit; font-size: 13px; color: var(--text);
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--line);
+        border-radius: 9px; padding: 7px 12px; cursor: pointer;
+      }
+      button:hover, select:hover { background: rgba(255, 255, 255, 0.09); }
+      button.primary {
+        background: var(--accent); color: #1a0f08; border-color: transparent;
+        font-weight: 600;
+      }
+      button.primary:hover { background: #ffc094; }
+      button:disabled { opacity: 0.45; cursor: not-allowed; }
+      dl { display: grid; grid-template-columns: auto 1fr; gap: 7px 14px; margin: 0; font-size: 12.5px; }
+      dt { color: var(--muted); }
+      dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; word-break: break-word; }
+      h2 { font-size: 12px; color: var(--muted); font-weight: 500; margin: 0 0 12px; }
+      .pill {
+        display: inline-flex; align-items: center; gap: 6px;
+        border: 1px solid var(--line); border-radius: 999px;
+        padding: 3px 9px; font-size: 11px; color: var(--muted);
+      }
+      .dot { width: 6px; height: 6px; border-radius: 50%; background: #6b7280; }
+      .dot.on { background: #34d399; box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.14); }
+      .dot.warn { background: #f87171; box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.14); }
+      .meter { height: 5px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); overflow: hidden; margin-top: 8px; }
+      .meter > i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width 80ms linear; }
+      #log {
+        margin: 18px 0 0; padding: 12px; max-height: 220px; overflow: auto;
+        background: #05060a; border: 1px solid var(--line); border-radius: 12px;
+        font: 11.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #9ba0aa; white-space: pre-wrap;
+      }
+      .log-ok { color: #6ee7b7; }
+      .log-warn { color: #fca5a5; }
+      .note { font-size: 12px; color: var(--muted); margin-top: 14px; }
+      code { background: rgba(255, 255, 255, 0.06); padding: 1px 5px; border-radius: 5px; font-size: 11.5px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+            <circle cx="12" cy="12" r="7.5" stroke="#ffb27a" stroke-width="2" />
+            <circle cx="12" cy="12" r="2.4" fill="#ffe6d3" />
+          </svg>
+        </div>
+        <div>
+          <h1>LookGood Live — test bench</h1>
+          <p class="sub">
+            Served from <code>http://localhost:5174</code>. Load the unpacked extension first,
+            then press Start. Every value below comes from the stream the page actually receives.
+          </p>
+        </div>
+      </header>
+
+      <div class="grid">
+        <section class="panel">
+          <div class="video-wrap">
+            <span class="empty" id="empty">Camera is off</span>
+            <video id="video" autoplay playsinline muted></video>
+          </div>
+          <div class="controls">
+            <button class="primary" id="start">Start camera</button>
+            <button id="stop" disabled>Stop</button>
+            <select id="quality" aria-label="Resolution">
+              <option value="1280x720">720p</option>
+              <option value="640x480">480p</option>
+              <option value="1920x1080">1080p</option>
+            </select>
+            <select id="fps" aria-label="Frame rate">
+              <option value="30">30 fps</option>
+              <option value="15">15 fps</option>
+              <option value="60">60 fps</option>
+            </select>
+            <select id="device" aria-label="Camera device">
+              <option value="">Default camera</option>
+            </select>
+            <button id="audio">Audio only</button>
+          </div>
+          <p class="note">
+            Tip: move a slider in the popup while the camera is running. The track below should
+            keep the same device and resolution, and the picture should change live.
+          </p>
+        </section>
+
+        <section class="panel">
+          <h2>What the page sees</h2>
+          <dl>
+            <dt>Pipeline</dt>
+            <dd><span class="pill"><span class="dot" id="pipe-dot"></span><span id="pipe">not detected</span></span></dd>
+            <dt>Track label</dt>
+            <dd id="label">—</dd>
+            <dt>Resolution</dt>
+            <dd id="resolution">—</dd>
+            <dt>Frame rate</dt>
+            <dd id="fps-live">—</dd>
+            <dt>Audio track</dt>
+            <dd id="audio-state">—</dd>
+            <dt>Mic level</dt>
+            <dd id="audio-level">—</dd>
+          </dl>
+          <div class="meter"><i id="audio-bar"></i></div>
+          <h2 style="margin-top: 18px">Extension</h2>
+          <dl>
+            <dt>MAIN-world hook</dt>
+            <dd id="hook">—</dd>
+            <dt>Build</dt>
+            <dd id="version">—</dd>
+          </dl>
+          <pre id="log">waiting for a camera…</pre>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const video = $('video');
+      const logEl = $('log');
+      let stream = null;
+      let frames = 0;
+      let fpsTimer = 0;
+      let audioCtx = null;
+      let analyser = null;
+      let levelTimer = 0;
+
+      function log(message, kind = '') {
+        const stamp = new Date().toLocaleTimeString();
+        if (logEl.dataset.started !== '1') {
+          logEl.textContent = '';
+          logEl.dataset.started = '1';
+        }
+        const line = document.createElement('span');
+        line.className = kind ? `log-${kind}` : '';
+        line.textContent = `${stamp}  ${message}\n`;
+        logEl.appendChild(line);
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+
+      async function refreshDevices() {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const cameras = devices.filter((d) => d.kind === 'videoinput');
+          const select = $('device');
+          select.innerHTML = '<option value="">Default camera</option>';
+          cameras.forEach((camera, index) => {
+            const option = document.createElement('option');
+            option.value = camera.deviceId;
+            option.textContent = camera.label || `Camera ${index + 1}`;
+            select.appendChild(option);
+          });
+        } catch (error) {
+          log(`enumerateDevices failed: ${error.message}`, 'warn');
+        }
+      }
+
+      function stop() {
+        if (stream) {
+          stream.getTracks().forEach((track) => track.stop());
+          stream = null;
+        }
+        video.srcObject = null;
+        window.__stream = null;
+        $('start').disabled = false;
+        $('stop').disabled = true;
+        $('empty').style.display = '';
+        clearInterval(fpsTimer);
+        clearInterval(levelTimer);
+        if (audioCtx) {
+          void audioCtx.close();
+          audioCtx = null;
+        }
+        $('audio-bar').style.width = '0%';
+        $('audio-level').textContent = '—';
+        log('camera stopped');
+      }
+
+      function describeTrack(track) {
+        if (!track) return;
+        const settings = track.getSettings ? track.getSettings() : {};
+        $('label').textContent = track.label || '(no label)';
+        $('resolution').textContent =
+          settings.width && settings.height ? `${settings.width} × ${settings.height}` : '—';
+        log(
+          `video track: kind=${track.kind} readyState=${track.readyState} ` +
+            `size=${settings.width || '?'}x${settings.height || '?'} ` +
+            `fps=${settings.frameRate || '?'} device=${(settings.deviceId || '').slice(0, 12) || '?'}`,
+          'ok',
+        );
+      }
+
+      function hookAudio(track) {
+        if (!track) {
+          $('audio-state').textContent = 'none';
+          return;
+        }
+        $('audio-state').textContent = track.label || 'present';
+        try {
+          audioCtx = new AudioContext();
+          const source = audioCtx.createMediaStreamSource(new MediaStream([track]));
+          analyser = audioCtx.createAnalyser();
+          analyser.fftSize = 512;
+          source.connect(analyser);
+          const data = new Uint8Array(analyser.frequencyBinCount);
+          levelTimer = setInterval(() => {
+            analyser.getByteTimeDomainData(data);
+            let peak = 0;
+            for (const value of data) peak = Math.max(peak, Math.abs(value - 128) / 128);
+            $('audio-bar').style.width = `${Math.min(100, peak * 140)}%`;
+            $('audio-level').textContent = peak > 0.01 ? `${Math.round(peak * 100)}%` : 'silent';
+          }, 120);
+        } catch (error) {
+          log(`audio analyser failed: ${error.message}`, 'warn');
+        }
+      }
+
+      async function start(withAudio = true) {
+        stop();
+        const [width, height] = $('quality').value.split('x').map(Number);
+        const frameRate = Number($('fps').value);
+        const deviceId = $('device').value;
+        const constraints = {
+          video: {
+            width: { ideal: width },
+            height: { ideal: height },
+            frameRate: { ideal: frameRate },
+            ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+          },
+          audio: withAudio ? { echoCancellation: true, noiseSuppression: true } : false,
+        };
+        log(`getUserMedia(${JSON.stringify(constraints)})`);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (error) {
+          log(`getUserMedia failed: ${error.name}: ${error.message}`, 'warn');
+          return;
+        }
+        video.srcObject = stream;
+        window.__stream = stream;
+        $('empty').style.display = 'none';
+        $('start').disabled = true;
+        $('stop').disabled = false;
+
+        const videoTrack = stream.getVideoTracks()[0];
+        describeTrack(videoTrack);
+        hookAudio(stream.getAudioTracks()[0]);
+        await refreshDevices();
+
+        frames = 0;
+        fpsTimer = setInterval(() => {
+          $('fps-live').textContent = `${frames} fps`;
+          frames = 0;
+        }, 1000);
+        const count = () => {
+          frames += 1;
+          if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(count);
+        };
+        if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(count);
+
+        log(
+          `stream: ${stream.getVideoTracks().length} video + ${stream.getAudioTracks().length} audio track(s)`,
+          'ok',
+        );
+      }
+
+      function inspectHook() {
+        const hook = window.__LOOKGOOD__;
+        if (hook) {
+          $('pipe-dot').className = 'dot on';
+          $('pipe').textContent = hook.hasPipeline ? 'canvas pipeline' : 'pass-through';
+          $('hook').textContent = 'installed';
+          $('version').textContent = `v${hook.version}`;
+          log(`LookGood hook found (v${hook.version})`, 'ok');
+        } else {
+          $('pipe-dot').className = 'dot warn';
+          $('pipe').textContent = 'not injected';
+          $('hook').textContent = 'missing';
+          log('LookGood hook not found — is the extension loaded for localhost?', 'warn');
+        }
+      }
+
+      $('start').addEventListener('click', () => void start(true));
+      $('audio').addEventListener('click', () => void start(false));
+      $('stop').addEventListener('click', stop);
+      $('device').addEventListener('change', () => void start(true));
+      $('quality').addEventListener('change', () => {
+        if (stream) void start(true);
+      });
+      $('fps').addEventListener('change', () => {
+        if (stream) void start(true);
+      });
+      window.addEventListener('beforeunload', stop);
+
+      inspectHook();
+      void refreshDevices();
+      setInterval(inspectHook, 3000);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,41 @@
+{
+  "name": "lookgood-live",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Real-time webcam effects for any video call, processed locally in the browser.",
+  "scripts": {
+    "dev": "node scripts/build.mjs --watch",
+    "build": "node scripts/build.mjs",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test-page": "node scripts/serve-test.mjs",
+    "e2e": "node scripts/e2e.mjs",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build && npm run e2e"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.2.3",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zustand": "^5.1.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/chrome": "^0.1.32",
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.3.0",
+    "eslint": "^9.39.2",
+    "jsdom": "^28.0.0",
+    "playwright-core": "^1.65.1",
+    "tailwindcss": "^4.3.5",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.73.0",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

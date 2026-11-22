@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.artifacts/
+assets/mediapipe/
+.tmp-models/
+*.log
+.DS_Store
+.vscode/

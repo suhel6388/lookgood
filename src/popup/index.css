@@ -1,0 +1,83 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-accent: #ffb27a;
+  --color-accent-strong: #ff8f5c;
+  --color-ink: #0a0b0f;
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    sans-serif;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--color-ink);
+  color: #f4f4f5;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  width: 360px;
+  overflow-x: hidden;
+}
+
+::selection {
+  background: rgba(255, 178, 122, 0.3);
+}
+
+.lg-range {
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--color-accent) 0%,
+    var(--color-accent-strong) var(--fill, 0%),
+    rgba(255, 255, 255, 0.09) var(--fill, 0%),
+    rgba(255, 255, 255, 0.09) 100%
+  );
+  outline: none;
+  cursor: pointer;
+}
+
+.lg-range::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 9999px;
+  background: #fffaf4;
+  border: 3px solid #0a0b0f;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.22),
+    0 2px 8px rgba(0, 0, 0, 0.55);
+  transition: transform 120ms ease;
+}
+
+.lg-range:active::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+
+.lg-range:focus-visible::-webkit-slider-thumb {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.3),
+    0 0 0 4px rgba(255, 178, 122, 0.3);
+}
+
+.lg-range:disabled {
+  cursor: not-allowed;
+}
+
+/* Keep the popup scrollbar out of the way. */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
