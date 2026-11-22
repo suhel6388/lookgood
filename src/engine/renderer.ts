@@ -1,19 +1,6 @@
-const VERTEX_SHADER = `#version 300 es
-in vec2 aPos;
-out vec2 vUv;
-void main() {
-  vUv = aPos * 0.5 + 0.5;
-  gl_Position = vec4(aPos, 0.0, 1.0);
-}`;
-
-const COPY_FRAGMENT = `#version 300 es
-precision highp float;
-in vec2 vUv;
-out vec4 outColor;
-uniform sampler2D uFrame;
-void main() {
-  outColor = texture(uFrame, vUv);
-}`;
+import type { LookSettings } from '../shared/settings';
+import { texelSize, toEffectUniforms } from './params';
+import { EFFECTS_FRAGMENT, VERTEX_SHADER } from './shaders';
 
 function compile(
   gl: WebGL2RenderingContext,
@@ -54,17 +41,26 @@ function link(
   return program;
 }
 
+interface EffectLocations {
+  frame: WebGLUniformLocation | null;
+  texel: WebGLUniformLocation | null;
+  master: WebGLUniformLocation | null;
+  color: WebGLUniformLocation | null;
+  light: WebGLUniformLocation | null;
+  sharpen: WebGLUniformLocation | null;
+}
+
 /**
- * Phase 2 renderer: uploads the camera frame and draws it back unchanged. The
- * effect passes are layered on top of this in the next phase.
+ * WebGL2 renderer. One fullscreen triangle, one fragment shader; every effect
+ * is a uniform, so changing a slider never recompiles anything.
  */
 export class FrameRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly gl: WebGL2RenderingContext;
   private readonly program: WebGLProgram;
+  private readonly locations: EffectLocations;
   private readonly vao: WebGLVertexArrayObject;
   private readonly frameTexture: WebGLTexture;
-  private readonly frameUniform: WebGLUniformLocation | null;
   private disposed = false;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -81,8 +77,15 @@ export class FrameRenderer {
     if (!gl) throw new Error('WebGL2 is not available in this page');
     this.gl = gl;
 
-    this.program = link(gl, VERTEX_SHADER, COPY_FRAGMENT);
-    this.frameUniform = gl.getUniformLocation(this.program, 'uFrame');
+    this.program = link(gl, VERTEX_SHADER, EFFECTS_FRAGMENT);
+    this.locations = {
+      frame: gl.getUniformLocation(this.program, 'uFrame'),
+      texel: gl.getUniformLocation(this.program, 'uTexel'),
+      master: gl.getUniformLocation(this.program, 'uMaster'),
+      color: gl.getUniformLocation(this.program, 'uColor'),
+      light: gl.getUniformLocation(this.program, 'uLight'),
+      sharpen: gl.getUniformLocation(this.program, 'uSharpen'),
+    };
 
     const vao = gl.createVertexArray();
     const buffer = gl.createBuffer();
@@ -116,17 +119,13 @@ export class FrameRenderer {
     gl.clearColor(0, 0, 0, 1);
   }
 
-  get context(): WebGL2RenderingContext {
-    return this.gl;
-  }
-
   resize(width: number, height: number): void {
     this.canvas.width = width;
     this.canvas.height = height;
     this.gl.viewport(0, 0, width, height);
   }
 
-  render(source: HTMLVideoElement): void {
+  render(source: HTMLVideoElement, settings: LookSettings): void {
     if (this.disposed) return;
     const gl = this.gl;
     if (source.readyState < 2) return;
@@ -141,11 +140,19 @@ export class FrameRenderer {
       source,
     );
 
-    gl.clear(gl.COLOR_BUFFER_BIT);
+    const uniforms = toEffectUniforms(settings);
+    const [tx, ty] = texelSize(this.canvas.width, this.canvas.height);
+
     gl.useProgram(this.program);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.frameTexture);
-    gl.uniform1i(this.frameUniform, 0);
+    gl.uniform1i(this.locations.frame, 0);
+    gl.uniform2f(this.locations.texel, tx, ty);
+    gl.uniform1f(this.locations.master, uniforms.master);
+    gl.uniform1f(this.locations.color, uniforms.color);
+    gl.uniform1f(this.locations.light, uniforms.light);
+    gl.uniform1f(this.locations.sharpen, uniforms.sharpen);
+
     gl.bindVertexArray(this.vao);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.bindVertexArray(null);

@@ -17,7 +17,7 @@ Phase 1 is complete; phases 2–4 are being built in this repository.
 | --- | --- | --- |
 | 1 | MV3 + Vite + React popup, MAIN-world `getUserMedia` hook, pass-through | done |
 | 2 | Canvas pipeline, constraints/track lifecycle, audio passthrough | done |
-| 2.5 | Shader effects: color, light, sharpen | in progress |
+| 2.5 | Shader effects: color, light, sharpen | done |
 | 3 | MediaPipe segmentation, portrait light, skin smoothing, background blur | in progress |
 | 4 | React popup, live preview, presets, live settings sync | in progress |
 | 5 | Auth / licensing / payments | intentionally omitted (free) |
@@ -91,7 +91,9 @@ npm run verify      # typecheck + lint + test + build + e2e
 `npm run e2e` uses `playwright-core` against an installed Chromium browser
 (Brave, Chrome or Edge; override with `BROWSER_PATH`). It loads the unpacked
 extension, drives the test page, samples real frames and screenshots the popup
-into `.artifacts/`. Set `HEADED=1` to watch it run.
+into `.artifacts/`. Set `HEADED=1` to watch it run. The fake camera is a
+generated Y4M test pattern (`scripts/fake-camera.mjs`) so colour, light and
+sharpening changes can be asserted numerically instead of by eye.
 
 Bundling notes:
 
@@ -116,6 +118,8 @@ src/content/bridge.ts       isolated world: storage <-> page, status -> badge
 src/content/inject.ts       MAIN world: getUserMedia override
 src/engine/pipeline.ts      hidden video -> WebGL canvas -> captureStream
 src/engine/renderer.ts      WebGL2 frame upload and effect passes
+src/engine/shaders.ts       GLSL for the effect pass
+src/engine/params.ts        slider values -> shader uniforms
 src/popup/                  React + Tailwind UI, Zustand store
 src/shared/                 settings, message protocol, storage helpers
 test/                       local camera test bench

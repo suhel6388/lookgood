@@ -1,7 +1,8 @@
 /**
  * End-to-end smoke test: launches a Chromium browser with the unpacked
- * extension, a fake camera and the local test page, then checks that the page
- * receives a real (hooked) stream and that the popup renders and persists.
+ * extension, a deterministic fake camera and the local test page, then checks
+ * that the page receives a hooked stream and that the shader effects actually
+ * change the pixels.
  *
  *   npm run e2e
  *
@@ -10,17 +11,33 @@
  *   HEADED=1      force a visible browser window
  */
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
+import { writeFakeCamera } from './fake-camera.mjs';
 
 const rootDir = fileURLToPath(new URL('..', import.meta.url));
 const distDir = resolve(rootDir, 'dist');
 const artifactsDir = resolve(rootDir, '.artifacts');
 const PORT = 5174;
 const ORIGIN = `http://localhost:${PORT}`;
+const SETTINGS_KEY = 'lookgood:settings';
+
+const BASE_SETTINGS = {
+  masterEnabled: true,
+  skinSmoothing: 0,
+  colorCorrection: 0,
+  lightCorrection: 0,
+  sharpening: 0,
+  portraitLighting: 0,
+  backgroundBlur: 0,
+  watermark: false,
+  targetFps: 30,
+  aiFps: 15,
+  showStats: false,
+};
 
 const CANDIDATES = [
   process.env.BROWSER_PATH,
@@ -44,6 +61,11 @@ if (!existsSync(join(distDir, 'manifest.json'))) {
   console.error('dist/ is missing. Run `npm run build` first.');
   process.exit(1);
 }
+
+mkdirSync(artifactsDir, { recursive: true });
+const fakeCameraPath = writeFakeCamera(
+  join(artifactsDir, 'fake-camera.y4m'),
+).replaceAll('\\', '/');
 
 const failures = [];
 function check(name, condition, detail) {
@@ -78,6 +100,7 @@ async function launch(headless) {
       `--disable-extensions-except=${distDir}`,
       `--load-extension=${distDir}`,
       '--use-fake-device-for-media-stream',
+      `--use-file-for-fake-video-capture=${fakeCameraPath}`,
       '--use-fake-ui-for-media-stream',
       '--autoplay-policy=no-user-gesture-required',
       '--no-first-run',
@@ -92,8 +115,7 @@ async function launch(headless) {
 async function getExtensionId(context, timeoutMs = 15000) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
-    const workers = context.serviceWorkers();
-    for (const worker of workers) {
+    for (const worker of context.serviceWorkers()) {
       const match = /^chrome-extension:\/\/([a-p]{32})\//.exec(worker.url());
       if (match) return match[1];
     }
@@ -102,18 +124,83 @@ async function getExtensionId(context, timeoutMs = 15000) {
   return null;
 }
 
-async function main() {
-  mkdirSync(artifactsDir, { recursive: true });
-  const server = spawn(process.execPath, [resolve(rootDir, 'scripts/serve-test.mjs')], {
-    stdio: 'ignore',
+/** Writes settings through the service worker so the test tab stays focused. */
+async function applySettings(worker, patch, page) {
+  await worker.evaluate(
+    async ({ key, base, patch: next }) => {
+      const stored = await chrome.storage.sync.get(key);
+      await chrome.storage.sync.set({
+        [key]: { ...(stored[key] ?? {}), ...base, ...next },
+      });
+    },
+    { key: SETTINGS_KEY, base: BASE_SETTINGS, patch },
+  );
+  await page.bringToFront();
+  await page.waitForTimeout(500);
+}
+
+/** Average colour and luma contrast of three regions of the delivered frame. */
+async function sampleFrame(page) {
+  return page.evaluate(() => {
+    const video = document.getElementById('video');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(video, 0, 0);
+
+    const region = (fx, fy, fw, fh) => {
+      const x = Math.floor(fx * canvas.width);
+      const y = Math.floor(fy * canvas.height);
+      const w = Math.max(2, Math.floor(fw * canvas.width));
+      const h = Math.max(2, Math.floor(fh * canvas.height));
+      const data = ctx.getImageData(x, y, w, h).data;
+      const lumas = [];
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+        lumas.push(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]);
+      }
+      const count = lumas.length;
+      const mean = lumas.reduce((sum, value) => sum + value, 0) / count;
+      const variance =
+        lumas.reduce((sum, value) => sum + (value - mean) ** 2, 0) / count;
+      return {
+        r: r / count,
+        g: g / count,
+        b: b / count,
+        luma: mean / 255,
+        contrast: Math.sqrt(variance) / 255,
+      };
+    };
+
+    return {
+      width: canvas.width,
+      height: canvas.height,
+      red: region(0.05, 0.05, 0.2, 0.25),
+      gray: region(0.53, 0.6, 0.17, 0.25),
+      texture: region(0.78, 0.6, 0.2, 0.25),
+    };
   });
+}
+
+async function main() {
+  const server = spawn(
+    process.execPath,
+    [resolve(rootDir, 'scripts/serve-test.mjs')],
+    { stdio: 'ignore' },
+  );
 
   let context;
   let profile;
   try {
     await waitForServer();
     const headed = process.env.HEADED === '1';
-    ({ context, profile } = await launch(headed ? false : true));
+    ({ context, profile } = await launch(!headed));
 
     const page = await context.newPage();
     const pageErrors = [];
@@ -158,13 +245,12 @@ async function main() {
     check('MAIN-world hook is installed', Boolean(hook));
     check('hook version matches package', hook?.version === pkg.version, hook?.version);
 
-    const streamInfo = await testPage.evaluate(async () => {
+    const streamInfo = await testPage.evaluate(() => {
       const video = document.getElementById('video');
       const stream = video.srcObject;
       if (!stream) return { error: 'no srcObject' };
       const track = stream.getVideoTracks()[0];
       const settings = track?.getSettings?.() ?? {};
-      // Sample the actual frames the page is showing.
       const canvas = document.createElement('canvas');
       canvas.width = 64;
       canvas.height = 36;
@@ -207,6 +293,53 @@ async function main() {
       streamInfo.videoWidth === streamInfo.width && streamInfo.videoHeight === streamInfo.height,
       `${streamInfo.videoWidth}x${streamInfo.videoHeight} vs ${streamInfo.width}x${streamInfo.height}`,
     );
+
+    const worker = context.serviceWorkers()[0];
+    if (worker) {
+      await applySettings(worker, {}, testPage);
+      const baseline = await sampleFrame(testPage);
+      check('test pattern red patch is visible', baseline.red.r > 150 && baseline.red.g < 90, JSON.stringify(baseline.red));
+      check('test pattern gray patch is visible', Math.abs(baseline.gray.luma - 0.5) < 0.08, String(baseline.gray.luma));
+      check('test pattern stripes have contrast', baseline.texture.contrast > 0.04, String(baseline.texture.contrast));
+
+      await applySettings(worker, { colorCorrection: 100 }, testPage);
+      const saturated = await sampleFrame(testPage);
+      check(
+        'color correction increases saturation',
+        saturated.red.g < baseline.red.g - 3 && saturated.red.r >= baseline.red.r - 2,
+        `g ${baseline.red.g.toFixed(1)} -> ${saturated.red.g.toFixed(1)}`,
+      );
+      check(
+        'color correction leaves neutrals neutral',
+        Math.abs(saturated.gray.r - saturated.gray.g) < 6,
+        `${saturated.gray.r.toFixed(1)} / ${saturated.gray.g.toFixed(1)}`,
+      );
+
+      await applySettings(worker, { lightCorrection: 100 }, testPage);
+      const brighter = await sampleFrame(testPage);
+      check(
+        'light correction brightens midtones',
+        brighter.gray.luma > baseline.gray.luma + 0.05,
+        `${baseline.gray.luma.toFixed(3)} -> ${brighter.gray.luma.toFixed(3)}`,
+      );
+
+      await applySettings(worker, { sharpening: 100 }, testPage);
+      const sharpened = await sampleFrame(testPage);
+      check(
+        'sharpening raises edge contrast',
+        sharpened.texture.contrast > baseline.texture.contrast + 0.02,
+        `${baseline.texture.contrast.toFixed(3)} -> ${sharpened.texture.contrast.toFixed(3)}`,
+      );
+
+      await applySettings(worker, {}, testPage);
+      const restored = await sampleFrame(testPage);
+      check(
+        'turning effects off restores the frame',
+        Math.abs(restored.gray.luma - baseline.gray.luma) < 0.04 &&
+          Math.abs(restored.texture.contrast - baseline.texture.contrast) < 0.03,
+        `luma ${restored.gray.luma.toFixed(3)} contrast ${restored.texture.contrast.toFixed(3)}`,
+      );
+    }
 
     await testPage.screenshot({ path: join(artifactsDir, 'test-page.png') });
 

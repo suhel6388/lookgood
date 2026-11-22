@@ -256,7 +256,7 @@ export class VideoPipeline {
   private renderFrame(): void {
     if (!this.running || !this.renderer) return;
     try {
-      this.renderer.render(this.video);
+      this.renderer.render(this.video, this.settings);
     } catch (error) {
       this.fail(error);
       return;
