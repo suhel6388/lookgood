@@ -1,7 +1,9 @@
+import { VideoPipeline } from '../engine/pipeline';
 import {
   CHANNEL,
   IDLE_STATUS,
   isBridgeToPageMessage,
+  type EngineState,
   type EngineStatus,
 } from '../shared/messages';
 import {
@@ -11,11 +13,11 @@ import {
 } from '../shared/settings';
 
 /**
- * MAIN-world content script (phase 1: pass-through).
+ * MAIN-world content script.
  *
- * It runs at document_start, before the page can call getUserMedia, and is the
- * only place where we can replace navigator.mediaDevices.getUserMedia for the
- * page itself. Anything that is not a video request is forwarded untouched.
+ * Runs at document_start, before the page can call getUserMedia, and is the
+ * only place where the page's own navigator.mediaDevices object can be
+ * replaced. Non-video requests are forwarded untouched.
  */
 
 declare global {
@@ -31,22 +33,37 @@ declare global {
 const VERSION = '0.1.0';
 
 let assetBase = '';
-let settings: LookSettings = { ...DEFAULT_SETTINGS };
-let activeStreams = 0;
+let settings: LookSettings = normalizeSettings(DEFAULT_SETTINGS);
+let lastError: string | undefined;
+
+const pipelines = new Set<VideoPipeline>();
 
 function buildStatus(): EngineStatus {
+  const list = Array.from(pipelines);
+  const primary = list.find((pipeline) => pipeline.active) ?? list[0];
+
+  let state: EngineState = 'idle';
+  if (!settings.masterEnabled) state = 'bypassed';
+  else if (primary?.error ?? lastError) state = 'error';
+  else if (primary?.active) state = 'active';
+
   return {
     ...IDLE_STATUS,
-    state: !settings.masterEnabled
-      ? 'bypassed'
-      : activeStreams > 0
-        ? 'active'
-        : 'idle',
-    streams: activeStreams,
+    state,
+    streams: list.length,
+    ai: primary?.ai ?? 'off',
+    fps: primary?.fps ?? 0,
+    width: primary?.width ?? 0,
+    height: primary?.height ?? 0,
+    deviceLabel: primary?.deviceLabel ?? '',
+    error: primary?.error ?? lastError,
   };
 }
 
-function postStatus(): void {
+function publishStatus(): void {
+  if (window.__LOOKGOOD__) {
+    window.__LOOKGOOD__.hasPipeline = pipelines.size > 0;
+  }
   window.postMessage(
     {
       channel: CHANNEL,
@@ -70,6 +87,8 @@ window.addEventListener('message', (event: MessageEvent) => {
   assetBase = message.payload.assetBase;
   settings = normalizeSettings(message.payload.settings);
   if (window.__LOOKGOOD__) window.__LOOKGOOD__.assetBase = assetBase;
+  for (const pipeline of pipelines) pipeline.updateSettings(settings);
+  publishStatus();
 });
 
 window.__LOOKGOOD__ = { version: VERSION, assetBase, hasPipeline: false };
@@ -78,9 +97,7 @@ const mediaDevices = navigator.mediaDevices;
 const nativeGetUserMedia = mediaDevices?.getUserMedia?.bind(mediaDevices);
 
 function wantsVideo(constraints: MediaStreamConstraints | undefined): boolean {
-  const video = constraints?.video;
-  if (!video) return false;
-  return true;
+  return Boolean(constraints?.video);
 }
 
 if (mediaDevices && nativeGetUserMedia) {
@@ -89,23 +106,39 @@ if (mediaDevices && nativeGetUserMedia) {
   ): Promise<MediaStream> {
     if (!wantsVideo(constraints)) return nativeGetUserMedia(constraints);
 
-    const stream = await nativeGetUserMedia(constraints);
-    activeStreams += 1;
-    postStatus();
+    const raw = await nativeGetUserMedia(constraints);
+    const pipeline = new VideoPipeline({
+      stream: raw,
+      settings,
+      assetBase,
+      onChange: publishStatus,
+      onDispose: () => {
+        pipelines.delete(pipeline);
+        publishStatus();
+      },
+    });
 
-    const cleanup = () => {
-      activeStreams = Math.max(0, activeStreams - 1);
-      postStatus();
-    };
-    for (const track of stream.getTracks()) {
-      track.addEventListener('ended', cleanup, { once: true });
+    try {
+      await pipeline.start();
+    } catch (error) {
+      // Fail open: a broken pipeline must never take the call down with it.
+      pipeline.abort();
+      lastError = error instanceof Error ? error.message : String(error);
+      publishStatus();
+      return raw;
     }
 
-    // Phase 2 replaces this with a canvas pipeline. For now the page gets the
-    // untouched camera stream and audio tracks stay exactly as requested.
-    return stream;
+    lastError = undefined;
+    pipelines.add(pipeline);
+    publishStatus();
+    return pipeline.outputStream;
   };
 }
 
+window.addEventListener('pagehide', () => {
+  for (const pipeline of Array.from(pipelines)) pipeline.stop();
+  pipelines.clear();
+});
+
 requestConfig();
-postStatus();
+publishStatus();

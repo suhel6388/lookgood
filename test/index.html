@@ -298,6 +298,7 @@
         const videoTrack = stream.getVideoTracks()[0];
         describeTrack(videoTrack);
         hookAudio(stream.getAudioTracks()[0]);
+        inspectHook();
         await refreshDevices();
 
         frames = 0;

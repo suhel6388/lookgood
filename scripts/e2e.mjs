@@ -180,6 +180,7 @@ async function main() {
         audioTracks: stream.getAudioTracks().length,
         readyState: track?.readyState,
         label: track?.label,
+        deviceId: settings.deviceId,
         width: settings.width,
         height: settings.height,
         frameRate: settings.frameRate,
@@ -198,7 +199,14 @@ async function main() {
       `brightness ${streamInfo.averageBrightness}`,
     );
     check('reported resolution is sane', Number(streamInfo.width) > 0 && Number(streamInfo.height) > 0);
-    check('hook reports pipeline state', typeof hook?.hasPipeline === 'boolean', String(hook?.hasPipeline));
+    check('hook reports pipeline state', hook?.hasPipeline === true, String(hook?.hasPipeline));
+    check('raw device label is preserved', Boolean(streamInfo.label) && streamInfo.label !== 'canvas', String(streamInfo.label));
+    check('device id is preserved', Boolean(streamInfo.deviceId), String(streamInfo.deviceId));
+    check(
+      'video element matches the reported size',
+      streamInfo.videoWidth === streamInfo.width && streamInfo.videoHeight === streamInfo.height,
+      `${streamInfo.videoWidth}x${streamInfo.videoHeight} vs ${streamInfo.width}x${streamInfo.height}`,
+    );
 
     await testPage.screenshot({ path: join(artifactsDir, 'test-page.png') });
 

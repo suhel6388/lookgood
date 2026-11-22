@@ -16,7 +16,7 @@ Phase 1 is complete; phases 2–4 are being built in this repository.
 | Phase | Scope | State |
 | --- | --- | --- |
 | 1 | MV3 + Vite + React popup, MAIN-world `getUserMedia` hook, pass-through | done |
-| 2 | Canvas pipeline, constraints/track lifecycle, audio passthrough | in progress |
+| 2 | Canvas pipeline, constraints/track lifecycle, audio passthrough | done |
 | 2.5 | Shader effects: color, light, sharpen | in progress |
 | 3 | MediaPipe segmentation, portrait light, skin smoothing, background blur | in progress |
 | 4 | React popup, live preview, presets, live settings sync | in progress |
@@ -114,6 +114,8 @@ scripts/serve-test.mjs      test bench server
 src/background/             stateless service worker (defaults + badge)
 src/content/bridge.ts       isolated world: storage <-> page, status -> badge
 src/content/inject.ts       MAIN world: getUserMedia override
+src/engine/pipeline.ts      hidden video -> WebGL canvas -> captureStream
+src/engine/renderer.ts      WebGL2 frame upload and effect passes
 src/popup/                  React + Tailwind UI, Zustand store
 src/shared/                 settings, message protocol, storage helpers
 test/                       local camera test bench
