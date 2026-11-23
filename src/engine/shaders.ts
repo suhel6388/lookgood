@@ -57,6 +57,7 @@ uniform sampler2D uSkinBlur;
 uniform sampler2D uBackgroundBlur;
 uniform sampler2D uPersonMask;
 uniform sampler2D uFaceMask;
+uniform sampler2D uOverlay;
 
 uniform vec2 uTexel;
 uniform float uMaster;
@@ -68,6 +69,7 @@ uniform float uPortrait;
 uniform float uBackground;
 uniform float uHasPerson;
 uniform float uHasFace;
+uniform float uHasOverlay;
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 
@@ -132,5 +134,10 @@ void main() {
   color = mix(vec3(luma), color, 1.0 + uColor * 0.7);
   color = (color - 0.5) * (1.0 + uColor * 0.18) + 0.5;
 
-  outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+  color = clamp(color, 0.0, 1.0);
+  if (uHasOverlay > 0.5) {
+    vec4 overlay = texture(uOverlay, vUv);
+    color = mix(color, overlay.rgb, overlay.a);
+  }
+  outColor = vec4(color, 1.0);
 }`;

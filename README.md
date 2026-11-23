@@ -3,7 +3,8 @@
 Real-time webcam effects for any video call. LookGood Live hooks the camera on
 the page, runs a WebGL effect pipeline on the frames, and hands the processed
 stream back to the site. Skin smoothing, color, light, sharpening, portrait
-lighting and background blur are all adjustable live from the popup.
+lighting and background blur are all adjustable live from the popup, with an
+optional watermark and stats overlay and a camera preview before you join.
 
 Everything is processed on the device. No video, audio or frame data is ever
 uploaded, recorded or sent to a server. There is no account and no payment —
@@ -11,7 +12,8 @@ every effect is unlocked.
 
 ## Status
 
-Phase 1–3 are complete; phase 4 (popup preview and polish) is being built in this repository.
+Phase 1–4 are complete. The extension is usable on the supported call sites; phase 6
+(worker offload and store submission polish) is not started.
 
 | Phase | Scope | State |
 | --- | --- | --- |
@@ -19,7 +21,7 @@ Phase 1–3 are complete; phase 4 (popup preview and polish) is being built in t
 | 2 | Canvas pipeline, constraints/track lifecycle, audio passthrough | done |
 | 2.5 | Shader effects: color, light, sharpen | done |
 | 3 | MediaPipe segmentation, portrait light, skin smoothing, background blur | done |
-| 4 | React popup, live preview, presets, live settings sync | in progress |
+| 4 | React popup, live preview, presets, live settings sync | done |
 | 5 | Auth / licensing / payments | intentionally omitted (free) |
 | 6 | OffscreenCanvas + worker, store submission polish | not started |
 
@@ -45,8 +47,11 @@ page (MAIN world)                      isolated world          extension
    video track returned to the site; audio tracks are passed through untouched.
 4. MediaPipe Tasks Vision (selfie segmenter + face landmarker) runs at a lower
    frame rate than the shader loop and produces a person mask and a face mask.
-5. Settings changes reach the page over `window.postMessage` and are applied to
-   every live pipeline without reloading the call.
+5. Optional watermark and stats overlays are drawn into a transparent canvas and
+   composited in the same shader pass, so they are part of the captured track.
+6. Settings changes reach the page over `window.postMessage` and are applied to
+   every live pipeline without reloading the call. The popup's live preview runs
+   the same pipeline on a camera stream it opens itself.
 
 The hook fails open: if WebGL or a model cannot start, the raw camera stream is
 returned so the call still works.
@@ -72,6 +77,10 @@ Open the test bench, press **Start camera**, then move sliders in the popup. The
 page reports the track label, resolution, frame rate and audio state of the
 stream it actually received. The bench also samples the frames, so a black feed
 is obvious.
+
+Press **Preview** in the popup to see the effects on your own camera before
+joining a call. The preview uses the same pipeline as the page hook, including
+the optional watermark and stats overlay.
 
 For a real call, open Meet/Zoom/Teams/Discord and join with the camera on. The
 toolbar badge shows `ON` while the pipeline is live and `AI` once a MediaPipe
@@ -120,8 +129,9 @@ src/engine/pipeline.ts      hidden video -> WebGL canvas -> captureStream
 src/engine/ai.ts            MediaPipe segmenter/landmarker, throttled masks
 src/engine/renderer.ts      WebGL2 frame upload, blur chains and effect pass
 src/engine/shaders.ts       GLSL for the blur, downscale and effect passes
+src/engine/overlay.ts       watermark and stats drawn into the captured frame
 src/engine/params.ts        slider values -> shader uniforms
-src/popup/                  React + Tailwind UI, Zustand store
+src/popup/                  React + Tailwind UI, Zustand store, live preview
 src/shared/                 settings, message protocol, storage helpers
 test/                       local camera test bench
 ```
@@ -133,6 +143,9 @@ test/                       local camera test bench
   Whereby, Jitsi, Webex, Skype, Slack), the WebRTC sample page and localhost.
 - `web_accessible_resources` exposes only the MediaPipe WASM runtime and the two
   model files so the page context can fetch them.
+- `content_security_policy.extension_pages` adds `'wasm-unsafe-eval'` so the
+  popup preview can compile MediaPipe's WASM locally. The page hook still runs
+  under the host page's own CSP.
 
 No `tabs`, `scripting`, `activeTab` or `<all_urls>` host access is requested.
 
@@ -159,6 +172,10 @@ access for video.
   zero, so there is a short warm-up. Inference then runs on the page's main
   thread at `aiFps` (15 by default); moving it into a worker is planned for
   phase 6.
+- The popup preview opens its own camera stream so it can show the processed
+  result without touching the call. A few webcams only allow one consumer; in
+  that case the popup shows a camera-unavailable message and the call keeps
+  working.
 
 ## License
 

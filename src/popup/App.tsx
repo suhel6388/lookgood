@@ -2,9 +2,11 @@ import { useEffect } from 'react';
 import {
   AI_EFFECT_KEYS,
   matchPreset,
+  needsAi,
   type SliderKey,
 } from '../shared/settings';
 import { PresetPicker } from './components/PresetPicker';
+import { Preview } from './components/Preview';
 import { Slider } from './components/Slider';
 import { StatusBar } from './components/StatusBar';
 import { Switch } from './components/Switch';
@@ -43,6 +45,39 @@ const EFFECTS: { key: SliderKey; label: string; hint: string }[] = [
   },
 ];
 
+function OutputToggle({
+  label,
+  hint,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 px-3.5 py-2.5 transition-opacity ${
+        disabled ? 'opacity-45' : ''
+      }`}
+    >
+      <div className="min-w-0">
+        <p className="text-[12.5px] font-medium text-zinc-200">{label}</p>
+        <p className="mt-0.5 text-[10.5px] leading-snug text-zinc-500">{hint}</p>
+      </div>
+      <Switch
+        checked={checked}
+        onChange={onChange}
+        disabled={disabled}
+        label={label}
+      />
+    </div>
+  );
+}
+
 function Logo() {
   return (
     <div className="flex h-7 w-7 items-center justify-center rounded-[9px] bg-gradient-to-br from-[#2a1b12] to-[#14161c] ring-1 ring-white/10">
@@ -74,6 +109,8 @@ export default function App() {
   const supported = usePopupStore((state) => state.supported);
   const setSlider = usePopupStore((state) => state.setSlider);
   const setMaster = usePopupStore((state) => state.setMaster);
+  const setWatermark = usePopupStore((state) => state.setWatermark);
+  const setShowStats = usePopupStore((state) => state.setShowStats);
   const setPreset = usePopupStore((state) => state.setPreset);
   const reset = usePopupStore((state) => state.reset);
   const hydrate = usePopupStore((state) => state.hydrate);
@@ -92,6 +129,7 @@ export default function App() {
 
   const activePreset = matchPreset(settings);
   const disabled = !settings.masterEnabled;
+  const aiNeeded = needsAi(settings);
 
   return (
     <div className="flex min-h-[420px] w-[360px] flex-col bg-[#0a0b0f]">
@@ -121,10 +159,13 @@ export default function App() {
       </header>
 
       <main className="flex flex-col gap-3 px-4 pb-4">
+        <Preview />
+
         <StatusBar
           status={status}
           supported={supported}
           masterEnabled={settings.masterEnabled}
+          aiNeeded={aiNeeded}
         />
 
         <section className="overflow-hidden rounded-xl border border-white/[0.06] bg-[#101218]">
@@ -158,6 +199,28 @@ export default function App() {
             Presets
           </h2>
           <PresetPicker active={activePreset} onSelect={setPreset} />
+        </section>
+
+        <section className="overflow-hidden rounded-xl border border-white/[0.06] bg-[#101218]">
+          <div className="border-b border-white/[0.05] px-3.5 py-2.5">
+            <h2 className="text-[11px] font-medium text-zinc-400">Output</h2>
+          </div>
+          <div className="divide-y divide-white/[0.04]">
+            <OutputToggle
+              label="Watermark"
+              hint="A small LookGood badge in the corner of your video."
+              checked={settings.watermark}
+              disabled={disabled}
+              onChange={setWatermark}
+            />
+            <OutputToggle
+              label="Show stats"
+              hint="Draw resolution, FPS and AI state onto the video."
+              checked={settings.showStats}
+              disabled={disabled}
+              onChange={setShowStats}
+            />
+          </div>
         </section>
 
         <footer className="mt-1 flex items-center justify-between border-t border-white/[0.05] pt-3">

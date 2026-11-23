@@ -1,6 +1,7 @@
 import type { AiState } from '../shared/messages';
 import type { LookSettings } from '../shared/settings';
 import { AiProcessor } from './ai';
+import { OverlayRenderer } from './overlay';
 import { FrameRenderer } from './renderer';
 
 export interface PipelineOptions {
@@ -33,6 +34,7 @@ export class VideoPipeline {
   private readonly canvas: HTMLCanvasElement;
   private renderer: FrameRenderer | null = null;
   private aiProcessor: AiProcessor | null = null;
+  private overlay: OverlayRenderer | null = null;
   private output: MediaStream | null = null;
   private settings: LookSettings;
   private readonly assetBase: string;
@@ -128,6 +130,7 @@ export class VideoPipeline {
 
     this.aiProcessor = new AiProcessor(this.assetBase, () => this.onChange?.());
     void this.aiProcessor.ensure(this.settings);
+    this.overlay = new OverlayRenderer();
 
     const captured = this.canvas.captureStream(this.captureFps);
     const track = captured.getVideoTracks()[0];
@@ -191,6 +194,8 @@ export class VideoPipeline {
     this.renderer = null;
     this.aiProcessor?.dispose();
     this.aiProcessor = null;
+    this.overlay?.dispose();
+    this.overlay = null;
 
     if (stopRaw) {
       try {
@@ -269,6 +274,14 @@ export class VideoPipeline {
       const aiFrame = this.aiProcessor?.tick(this.video, this.settings, now);
       if (aiFrame?.person) this.renderer.setPersonMask(aiFrame.person);
       if (aiFrame?.face) this.renderer.setFaceMask(aiFrame.face);
+      const overlay =
+        this.overlay?.draw(this.settings, {
+          fps: this.measuredFps,
+          width: this.canvas.width,
+          height: this.canvas.height,
+          ai: this.ai,
+        }) ?? null;
+      this.renderer.setOverlay(overlay);
       this.renderer.render(this.video, this.settings);
     } catch (error) {
       this.fail(error);

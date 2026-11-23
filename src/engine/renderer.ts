@@ -73,6 +73,7 @@ interface EffectLocations {
   backgroundBlur: WebGLUniformLocation | null;
   personMask: WebGLUniformLocation | null;
   faceMask: WebGLUniformLocation | null;
+  overlay: WebGLUniformLocation | null;
   texel: WebGLUniformLocation | null;
   master: WebGLUniformLocation | null;
   color: WebGLUniformLocation | null;
@@ -83,6 +84,7 @@ interface EffectLocations {
   background: WebGLUniformLocation | null;
   hasPerson: WebGLUniformLocation | null;
   hasFace: WebGLUniformLocation | null;
+  hasOverlay: WebGLUniformLocation | null;
 }
 
 interface BlurLocations {
@@ -114,6 +116,7 @@ export class FrameRenderer {
   private readonly frameTexture: WebGLTexture;
   private readonly personMaskTexture: WebGLTexture;
   private readonly faceMaskTexture: WebGLTexture;
+  private readonly overlayTexture: WebGLTexture;
 
   private skinA: RenderTarget | null = null;
   private skinB: RenderTarget | null = null;
@@ -122,6 +125,7 @@ export class FrameRenderer {
 
   private hasPerson = false;
   private hasFace = false;
+  private hasOverlay = false;
   private disposed = false;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -148,6 +152,7 @@ export class FrameRenderer {
       backgroundBlur: gl.getUniformLocation(this.effectsProgram, 'uBackgroundBlur'),
       personMask: gl.getUniformLocation(this.effectsProgram, 'uPersonMask'),
       faceMask: gl.getUniformLocation(this.effectsProgram, 'uFaceMask'),
+      overlay: gl.getUniformLocation(this.effectsProgram, 'uOverlay'),
       texel: gl.getUniformLocation(this.effectsProgram, 'uTexel'),
       master: gl.getUniformLocation(this.effectsProgram, 'uMaster'),
       color: gl.getUniformLocation(this.effectsProgram, 'uColor'),
@@ -158,6 +163,7 @@ export class FrameRenderer {
       background: gl.getUniformLocation(this.effectsProgram, 'uBackground'),
       hasPerson: gl.getUniformLocation(this.effectsProgram, 'uHasPerson'),
       hasFace: gl.getUniformLocation(this.effectsProgram, 'uHasFace'),
+      hasOverlay: gl.getUniformLocation(this.effectsProgram, 'uHasOverlay'),
     };
     this.blurLocations = {
       source: gl.getUniformLocation(this.blurProgram, 'uSource'),
@@ -173,13 +179,22 @@ export class FrameRenderer {
     const frameTexture = gl.createTexture();
     const personMaskTexture = gl.createTexture();
     const faceMaskTexture = gl.createTexture();
-    if (!vao || !buffer || !frameTexture || !personMaskTexture || !faceMaskTexture) {
+    const overlayTexture = gl.createTexture();
+    if (
+      !vao ||
+      !buffer ||
+      !frameTexture ||
+      !personMaskTexture ||
+      !faceMaskTexture ||
+      !overlayTexture
+    ) {
       throw new Error('WebGL allocation failed');
     }
     this.vao = vao;
     this.frameTexture = frameTexture;
     this.personMaskTexture = personMaskTexture;
     this.faceMaskTexture = faceMaskTexture;
+    this.overlayTexture = overlayTexture;
 
     gl.bindVertexArray(vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -216,6 +231,20 @@ export class FrameRenderer {
     );
 
     gl.bindTexture(gl.TEXTURE_2D, faceMaskTexture);
+    configureTexture(gl);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      1,
+      1,
+      0,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      new Uint8Array([0, 0, 0, 0]),
+    );
+
+    gl.bindTexture(gl.TEXTURE_2D, overlayTexture);
     configureTexture(gl);
     gl.texImage2D(
       gl.TEXTURE_2D,
@@ -306,6 +335,23 @@ export class FrameRenderer {
     );
   }
 
+  setOverlay(canvas: HTMLCanvasElement | null): void {
+    if (this.disposed) return;
+    this.hasOverlay = canvas !== null && canvas.width > 0 && canvas.height > 0;
+    if (!canvas || !this.hasOverlay) return;
+
+    const gl = this.gl;
+    gl.bindTexture(gl.TEXTURE_2D, this.overlayTexture);
+    gl.texImage2D(
+      gl.TEXTURE_2D,
+      0,
+      gl.RGBA,
+      gl.RGBA,
+      gl.UNSIGNED_BYTE,
+      canvas,
+    );
+  }
+
   render(source: HTMLVideoElement, settings: LookSettings): void {
     if (this.disposed) return;
     const gl = this.gl;
@@ -361,12 +407,14 @@ export class FrameRenderer {
     this.bindTexture(2, backgroundTexture);
     this.bindTexture(3, this.personMaskTexture);
     this.bindTexture(4, this.faceMaskTexture);
+    this.bindTexture(5, this.overlayTexture);
 
     gl.uniform1i(this.locations.frame, 0);
     gl.uniform1i(this.locations.skinBlur, 1);
     gl.uniform1i(this.locations.backgroundBlur, 2);
     gl.uniform1i(this.locations.personMask, 3);
     gl.uniform1i(this.locations.faceMask, 4);
+    gl.uniform1i(this.locations.overlay, 5);
     gl.uniform2f(this.locations.texel, tx, ty);
     gl.uniform1f(this.locations.master, uniforms.master);
     gl.uniform1f(this.locations.color, uniforms.color);
@@ -377,6 +425,7 @@ export class FrameRenderer {
     gl.uniform1f(this.locations.background, uniforms.background);
     gl.uniform1f(this.locations.hasPerson, this.hasPerson ? 1 : 0);
     gl.uniform1f(this.locations.hasFace, this.hasFace ? 1 : 0);
+    gl.uniform1f(this.locations.hasOverlay, this.hasOverlay ? 1 : 0);
 
     this.draw();
   }
@@ -389,6 +438,7 @@ export class FrameRenderer {
     gl.deleteTexture(this.frameTexture);
     gl.deleteTexture(this.personMaskTexture);
     gl.deleteTexture(this.faceMaskTexture);
+    gl.deleteTexture(this.overlayTexture);
     gl.deleteProgram(this.effectsProgram);
     gl.deleteProgram(this.blurProgram);
     gl.deleteProgram(this.downscaleProgram);

@@ -184,6 +184,8 @@ async function sampleFrame(page) {
       red: region(0.05, 0.05, 0.2, 0.25),
       gray: region(0.53, 0.6, 0.17, 0.25),
       texture: region(0.78, 0.6, 0.2, 0.25),
+      stats: region(0.0, 0.0, 0.35, 0.09),
+      corner: region(0.62, 0.8, 0.36, 0.18),
     };
   });
 }
@@ -381,6 +383,27 @@ async function main() {
         Math.abs(afterAi.texture.contrast - baseline.texture.contrast) < 0.03,
         `${baseline.texture.contrast.toFixed(3)} -> ${afterAi.texture.contrast.toFixed(3)}`,
       );
+
+      await applySettings(worker, { watermark: true }, testPage);
+      await testPage.waitForTimeout(600);
+      const watermarked = await sampleFrame(testPage);
+      check(
+        'watermark is drawn into the captured frame',
+        watermarked.corner.luma < baseline.corner.luma - 0.01,
+        `${baseline.corner.luma.toFixed(3)} -> ${watermarked.corner.luma.toFixed(3)}`,
+      );
+
+      await applySettings(worker, { showStats: true }, testPage);
+      await testPage.waitForTimeout(600);
+      const withStats = await sampleFrame(testPage);
+      check(
+        'stats readout is drawn into the captured frame',
+        withStats.stats.luma < baseline.stats.luma - 0.015,
+        `${baseline.stats.luma.toFixed(3)} -> ${withStats.stats.luma.toFixed(3)}`,
+      );
+
+      await applySettings(worker, {}, testPage);
+      await testPage.waitForTimeout(400);
     }
 
     await testPage.screenshot({ path: join(artifactsDir, 'test-page.png') });
@@ -399,7 +422,6 @@ async function main() {
       await popup.waitForSelector('text=LookGood', { timeout: 5000 });
       const sliderCount = await popup.locator('input[type="range"]').count();
       check('popup renders all effect sliders', sliderCount === 6, `found ${sliderCount}`);
-      check('popup has no runtime errors', popupErrors.length === 0, popupErrors.join(' | '));
 
       await popup.locator('#slider-color').fill('42');
       await popup.waitForTimeout(500);
@@ -409,7 +431,56 @@ async function main() {
       });
       check('popup persists settings to chrome.storage.sync', stored?.colorCorrection === 42, JSON.stringify(stored));
 
+      await popup.getByRole('switch', { name: 'Watermark' }).click();
+      await popup.getByRole('switch', { name: 'Show stats' }).click();
+      await popup.waitForTimeout(500);
+      const outputSettings = await popup.evaluate(async () => {
+        const result = await chrome.storage.sync.get('lookgood:settings');
+        return result['lookgood:settings'] ?? null;
+      });
+      check(
+        'popup persists the watermark and stats toggles',
+        outputSettings?.watermark === true && outputSettings?.showStats === true,
+        JSON.stringify(outputSettings),
+      );
+
+      await popup.locator('#preview-toggle').click();
+      await popup.waitForFunction(
+        () => {
+          const video = document.getElementById('preview-video');
+          return Boolean(video && video.videoWidth > 0 && video.readyState >= 2);
+        },
+        undefined,
+        { timeout: 20000 },
+      );
+      const previewState = await popup.locator('#preview-state').textContent();
+      check(
+        'popup preview receives camera frames',
+        Boolean(previewState && previewState.includes('×')),
+        previewState,
+      );
+
+      await popup.locator('#slider-background-blur').fill('100');
+      await popup.waitForFunction(
+        () => {
+          const text = document.getElementById('preview-state')?.textContent ?? '';
+          return text.includes('· AI');
+        },
+        undefined,
+        { timeout: 30000 },
+      );
+      check('popup preview loads AI effects', true);
+
       await popup.screenshot({ path: join(artifactsDir, 'popup.png'), fullPage: true });
+
+      await popup.locator('#preview-toggle').click();
+      await popup.waitForFunction(
+        () => document.getElementById('preview-video')?.srcObject === null,
+        undefined,
+        { timeout: 5000 },
+      );
+      check('preview releases the camera when stopped', true);
+      check('popup has no runtime errors', popupErrors.length === 0, popupErrors.join(' | '));
     }
 
     check('no page errors', pageErrors.length === 0, pageErrors.slice(0, 4).join(' | '));

@@ -4,18 +4,42 @@ interface StatusBarProps {
   status: EngineStatus;
   supported: boolean;
   masterEnabled: boolean;
+  aiNeeded: boolean;
+}
+
+interface Description {
+  tone: 'live' | 'idle' | 'warn' | 'off';
+  title: string;
+  detail: string;
+  note?: string;
+}
+
+function aiNote(
+  status: EngineStatus,
+  supported: boolean,
+  masterEnabled: boolean,
+  aiNeeded: boolean,
+): string | undefined {
+  if (!supported || !masterEnabled || !aiNeeded) return undefined;
+  if (status.ai === 'unavailable') {
+    return 'AI effects are unavailable on this page. Color, light and sharpen still work.';
+  }
+  if (status.ai === 'loading') return 'Loading the on-device AI models…';
+  return undefined;
 }
 
 function describe(
   status: EngineStatus,
   supported: boolean,
   masterEnabled: boolean,
-): { tone: 'live' | 'idle' | 'warn' | 'off'; title: string; detail: string } {
+  aiNeeded: boolean,
+): Description {
+  const note = aiNote(status, supported, masterEnabled, aiNeeded);
   if (!supported) {
     return {
       tone: 'off',
       title: 'Not available on this page',
-      detail: 'Open Meet, Zoom, Teams or Discord to go live.',
+      detail: 'Preview works here; effects apply on Meet, Zoom, Teams or Discord.',
     };
   }
   if (!masterEnabled) {
@@ -30,6 +54,7 @@ function describe(
       tone: 'warn',
       title: 'Falling back to your raw camera',
       detail: status.error ?? 'The effect pipeline could not start.',
+      note,
     };
   }
   if (status.state === 'active') {
@@ -37,13 +62,26 @@ function describe(
       status.width > 0 && status.height > 0
         ? `${status.width}×${status.height}`
         : '';
-    const parts = [size, status.fps > 0 ? `${Math.round(status.fps)} fps` : '']
+    const ai =
+      status.ai === 'ready'
+        ? 'AI ready'
+        : status.ai === 'loading'
+          ? 'AI loading'
+          : status.ai === 'unavailable'
+            ? 'AI off'
+            : '';
+    const parts = [
+      size,
+      status.fps > 0 ? `${Math.round(status.fps)} fps` : '',
+      ai,
+    ]
       .filter(Boolean)
       .join(' · ');
     return {
       tone: 'live',
       title: 'Live on this tab',
       detail: parts || status.deviceLabel || 'Enhancing your camera',
+      note,
     };
   }
   if (status.state === 'bypassed') {
@@ -51,12 +89,14 @@ function describe(
       tone: 'idle',
       title: 'Waiting for an effect',
       detail: 'Turn a slider up to start processing.',
+      note,
     };
   }
   return {
     tone: 'idle',
     title: 'Ready when you are',
     detail: 'Join a call and turn your camera on.',
+    note,
   };
 }
 
@@ -67,8 +107,18 @@ const TONE_STYLES: Record<string, string> = {
   off: 'bg-zinc-600',
 };
 
-export function StatusBar({ status, supported, masterEnabled }: StatusBarProps) {
-  const { tone, title, detail } = describe(status, supported, masterEnabled);
+export function StatusBar({
+  status,
+  supported,
+  masterEnabled,
+  aiNeeded,
+}: StatusBarProps) {
+  const { tone, title, detail, note } = describe(
+    status,
+    supported,
+    masterEnabled,
+    aiNeeded,
+  );
   return (
     <div className="flex items-start gap-2.5 rounded-xl border border-white/[0.06] bg-white/[0.025] px-3 py-2.5">
       <span
@@ -82,6 +132,9 @@ export function StatusBar({ status, supported, masterEnabled }: StatusBarProps) 
         <p className="mt-0.5 truncate text-[11px] leading-tight text-zinc-500">
           {detail}
         </p>
+        {note ? (
+          <p className="mt-1 text-[10px] leading-snug text-amber-300/75">{note}</p>
+        ) : null}
       </div>
     </div>
   );
